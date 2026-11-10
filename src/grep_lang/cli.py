@@ -1,5 +1,9 @@
 import argparse
 import json
+import io
+import subprocess
+import sys
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from .runtime import execute
@@ -85,6 +89,54 @@ def validate_metadata():
     print(f"Capabilities checked: {len(capabilities)}")
 
 
+
+def doctor():
+    checks = []
+
+    checks.append(("Python >= 3.9", sys.version_info >= (3, 9)))
+    checks.append(("Metadata manifest", METADATA_FILE.is_file()))
+    checks.append((
+        "Runtime source",
+        (ROOT / "src" / "grep_lang" / "runtime.py").is_file()
+    ))
+    checks.append((
+        "Test suite",
+        (ROOT / "tests" / "test_runtime.py").is_file()
+    ))
+
+    try:
+        with redirect_stdout(io.StringIO()):
+            validate_metadata()
+        metadata_ok = True
+    except SystemExit:
+        metadata_ok = False
+
+    checks.append(("Metadata validation", metadata_ok))
+
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True
+        )
+        checks.append(("Unit tests", result.returncode == 0))
+    except OSError:
+        checks.append(("Unit tests", False))
+
+    print("GREP Doctor — System Diagnostics")
+    print("--------------------------------")
+
+    for name, passed in checks:
+        print(f"[{'PASS' if passed else 'FAIL'}] {name}")
+
+    if all(passed for _, passed in checks):
+        print("\nGREP system: HEALTHY")
+    else:
+        print("\nGREP system: ISSUES DETECTED")
+        raise SystemExit(1)
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="greplang",
@@ -94,7 +146,7 @@ def main():
     parser.add_argument(
         "file",
         nargs="?",
-        help="GREP source file, metadata, or validate command"
+        help="GREP source file, metadata, validate, or doctor command"
     )
 
     args = parser.parse_args()
@@ -105,6 +157,10 @@ def main():
 
     if args.file == "validate":
         validate_metadata()
+        return
+
+    if args.file == "doctor":
+        doctor()
         return
 
     if not args.file:
