@@ -1,0 +1,3 @@
+# Search the project README
+find "GREP" in "README.md"
+count "GREP" in "README.md"

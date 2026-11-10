@@ -1,0 +1,4 @@
+# GREP v0.1.0
+let project = "Global Retrieval, Execution & Processing"
+print "Welcome to GREP"
+print $project

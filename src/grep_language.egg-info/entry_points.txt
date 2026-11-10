@@ -1,0 +1,2 @@
+[console_scripts]
+greplang = grep_lang.cli:main
