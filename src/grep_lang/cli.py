@@ -138,6 +138,10 @@ def doctor():
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "utils":
+        from .utilities.cli import main as utilities_main
+        raise SystemExit(utilities_main(sys.argv[2:]))
+
     parser = argparse.ArgumentParser(
         prog="greplang",
         description="GREP — Global Retrieval, Execution & Processing"

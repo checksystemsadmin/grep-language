@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "GREP — Global Retrieval, Execution & Processing"
 readme = "README.md"
 requires-python = ">=3.9"
+dependencies = ["tomli>=1.1; python_version < '3.11'"]
 license = "MIT"
 authors = [{name = "Nolan G. Sands"}]
 
