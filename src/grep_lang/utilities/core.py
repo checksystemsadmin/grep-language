@@ -10,6 +10,13 @@ import sqlite3
 import unicodedata
 from collections import defaultdict
 from pathlib import Path
+import ast
+import os
+import stat
+import subprocess
+import time
+import zipfile
+from collections import Counter
 
 
 def safe_path(path, root="."):
@@ -256,6 +263,356 @@ def build_report(root="."):
     }
 
 
+# ---------------------------------------------------------------------------
+# GREP Utility Standard — Batch 2: Filesystem and source intelligence
+# Utilities 21–40
+# ---------------------------------------------------------------------------
+
+def _utility_files(path=".", root="."):
+    base = safe_path(path, root)
+    if base.is_file():
+        return [base]
+    if not base.is_dir():
+        raise NotADirectoryError(str(base))
+    excluded = {".git", ".venv", "__pycache__", "node_modules"}
+    return [
+        item for item in sorted(base.rglob("*"))
+        if item.is_file()
+        and not any(part in excluded for part in item.relative_to(base).parts)
+    ]
+
+
+def directory_size(path=".", root="."):
+    base = safe_path(path, root)
+    files = _utility_files(path, root)
+    return {
+        "path": str(base),
+        "file_count": len(files),
+        "total_bytes": sum(item.stat().st_size for item in files),
+    }
+
+
+def duplicate_finder(path=".", root="."):
+    base = safe_path(path, root)
+    groups = {}
+    for item in _utility_files(path, root):
+        digest = hashlib.sha256()
+        with item.open("rb") as stream:
+            for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                digest.update(chunk)
+        groups.setdefault(digest.hexdigest(), []).append(
+            str(item.relative_to(base))
+        )
+    return [
+        {"sha256": digest, "files": names}
+        for digest, names in groups.items() if len(names) > 1
+    ]
+
+
+def large_file_finder(path=".", min_bytes=10_000_000, limit=100, root="."):
+    if min_bytes < 0 or limit < 1:
+        raise ValueError("min_bytes must be nonnegative and limit must be positive")
+    files = _utility_files(path, root)
+    found = [
+        {"path": str(p.relative_to(safe_path(root, "."))),
+         "size_bytes": p.stat().st_size}
+        for p in files if p.stat().st_size >= min_bytes
+    ]
+    return sorted(found, key=lambda item: item["size_bytes"], reverse=True)[:limit]
+
+
+def empty_file_finder(path=".", root="."):
+    return [
+        str(item.relative_to(safe_path(root, ".")))
+        for item in _utility_files(path, root)
+        if item.stat().st_size == 0
+    ]
+
+
+def file_age_analyzer(path=".", older_than_days=30, root="."):
+    if older_than_days < 0:
+        raise ValueError("older_than_days must be nonnegative")
+    now = time.time()
+    results = []
+    for item in _utility_files(path, root):
+        age = max(0.0, (now - item.stat().st_mtime) / 86400)
+        results.append({
+            "path": str(item.relative_to(safe_path(root, "."))),
+            "age_days": round(age, 2),
+            "older_than_threshold": age >= older_than_days,
+        })
+    return sorted(results, key=lambda item: item["age_days"], reverse=True)
+
+
+def permission_auditor(path=".", root="."):
+    results = []
+    for item in _utility_files(path, root):
+        mode = item.stat().st_mode
+        results.append({
+            "path": str(item.relative_to(safe_path(root, "."))),
+            "mode": stat.filemode(mode),
+            "world_writable": bool(mode & stat.S_IWOTH),
+            "executable": bool(mode & (stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)),
+        })
+    return results
+
+
+def symlink_inspector(path=".", root="."):
+    base = safe_path(path, root)
+    candidates = [base] if base.is_symlink() else base.rglob("*")
+    results = []
+    for item in candidates:
+        if item.is_symlink():
+            target = os.readlink(item)
+            resolved = (item.parent / target).resolve()
+            results.append({
+                "path": str(item.relative_to(safe_path(root, "."))),
+                "target": target,
+                "exists": resolved.exists(),
+                "within_root": resolved.is_relative_to(Path(root).resolve()),
+            })
+    return results
+
+
+def archive_inspector(path, root="."):
+    target = safe_path(path, root)
+    if not zipfile.is_zipfile(target):
+        raise ValueError("Unsupported or invalid ZIP archive")
+    with zipfile.ZipFile(target) as archive:
+        entries = archive.infolist()
+        return {
+            "archive": target.name,
+            "entry_count": len(entries),
+            "total_uncompressed_bytes": sum(x.file_size for x in entries),
+            "entries": [
+                {"name": x.filename, "size": x.file_size,
+                 "compressed_size": x.compress_size,
+                 "is_directory": x.is_dir()}
+                for x in entries[:1000]
+            ],
+        }
+
+
+def encoding_detector(path, root="."):
+    target = safe_path(path, root)
+    data = target.read_bytes()
+    if b"\x00" in data:
+        return {"encoding": "binary", "valid_text": False}
+    for encoding in ("utf-8-sig", "utf-16", "utf-8"):
+        try:
+            data.decode(encoding)
+            return {"encoding": encoding, "valid_text": True}
+        except UnicodeDecodeError:
+            pass
+    return {"encoding": "latin-1", "valid_text": True}
+
+
+def line_counter(path, root="."):
+    target = safe_path(path, root)
+    counts = {"lines": 0, "blank_lines": 0, "nonblank_lines": 0}
+    with target.open("r", encoding="utf-8", errors="replace") as stream:
+        for line in stream:
+            counts["lines"] += 1
+            if line.strip():
+                counts["nonblank_lines"] += 1
+            else:
+                counts["blank_lines"] += 1
+    return {"path": str(target), **counts}
+
+
+def extension_report(path=".", root="."):
+    counts = Counter()
+    for item in _utility_files(path, root):
+        counts[item.suffix.lower() or "[no extension]"] += 1
+    return {"total_extensions": len(counts), "counts": dict(sorted(counts.items()))}
+
+
+def git_change_analyzer(path=".", root="."):
+    target = safe_path(path, root)
+    cwd = target if target.is_dir() else target.parent
+    try:
+        output = subprocess.check_output(
+            ["git", "-C", str(cwd), "status", "--short"],
+            text=True, stderr=subprocess.PIPE, timeout=10
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError("Unable to inspect Git working tree: " + str(error)) from error
+    lines = output.splitlines()
+    return {
+        "changed_count": len(lines),
+        "changes": [{"status": line[:2], "path": line[3:]} for line in lines],
+    }
+
+
+def git_blame_reader(path, line=None, root="."):
+    target = safe_path(path, root)
+    relative = str(target.relative_to(Path(root).resolve()))
+    command = ["git", "-C", str(Path(root).resolve()),
+               "blame", "--line-porcelain"]
+    if line is not None:
+        if line < 1:
+            raise ValueError("line must be a positive integer")
+        command.extend(["-L", str(line) + "," + str(line)])
+    command.extend(["--", relative])
+    try:
+        output = subprocess.check_output(
+            command, text=True, stderr=subprocess.PIPE, timeout=15
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired) as error:
+        raise RuntimeError("Unable to read Git blame: " + str(error)) from error
+    records = []
+    current = {}
+    for item in output.splitlines():
+        if item.startswith("\t"):
+            current["text"] = item[1:]
+            records.append(current)
+            current = {}
+        elif item.startswith("author "):
+            current["author"] = item[7:]
+        elif item.startswith("summary "):
+            current["summary"] = item[8:]
+        elif re.match(r"^[0-9a-f]{40} ", item):
+            parts = item.split()
+            current["commit"] = parts[0]
+            current["line"] = int(parts[2])
+    return records
+
+
+def source_file_classifier(path, root="."):
+    target = safe_path(path, root)
+    groups = {
+        ".py": "python", ".pyi": "python", ".grep": "grep",
+        ".js": "javascript", ".mjs": "javascript", ".cjs": "javascript",
+        ".ts": "typescript", ".tsx": "typescript", ".jsx": "javascript",
+        ".rs": "rust", ".go": "go", ".java": "java",
+        ".c": "c", ".h": "c-header", ".cpp": "cpp", ".hpp": "cpp-header",
+        ".html": "html", ".css": "css", ".sql": "sql",
+        ".sh": "shell", ".bash": "shell", ".toml": "toml",
+        ".yaml": "yaml", ".yml": "yaml", ".json": "json",
+        ".md": "markdown",
+    }
+    return {
+        "path": str(target),
+        "extension": target.suffix.lower(),
+        "language": groups.get(target.suffix.lower(), "unknown"),
+    }
+
+
+def code_symbol_extractor(path, root="."):
+    target = safe_path(path, root)
+    if target.suffix.lower() == ".py":
+        tree = ast.parse(target.read_text(encoding="utf-8"))
+        symbols = []
+        for node in ast.walk(tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                symbols.append({
+                    "name": node.name,
+                    "kind": "class" if isinstance(node, ast.ClassDef) else "function",
+                    "line": node.lineno,
+                })
+        return sorted(symbols, key=lambda item: item["line"])
+    text = target.read_text(encoding="utf-8", errors="replace")
+    pattern = re.compile(
+        r"(?m)^\s*(?:export\s+)?(?:async\s+)?"
+        r"(?:function|class|def|fn|struct|interface|type)\s+([A-Za-z_$][\w$]*)"
+    )
+    return [{"name": match.group(1), "kind": "declaration",
+             "line": text.count("\n", 0, match.start()) + 1}
+            for match in pattern.finditer(text)]
+
+
+def import_graph(path=".", root="."):
+    base = safe_path(path, root)
+    files = [base] if base.is_file() else list(base.rglob("*.py"))
+    graph = {}
+    for item in files:
+        if item.suffix != ".py":
+            continue
+        try:
+            tree = ast.parse(item.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            graph[str(item.relative_to(safe_path(root, ".")))] = {"error": "parse_error"}
+            continue
+        imports = set()
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                imports.update(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                imports.add(node.module)
+        graph[str(item.relative_to(safe_path(root, ".")))] = sorted(imports)
+    return graph
+
+
+def dead_file_detector(path=".", root="."):
+    files = _utility_files(path, root)
+    text_files = []
+    for item in files:
+        if item.suffix.lower() in {".py", ".grep", ".md", ".toml", ".json",
+                                  ".yaml", ".yml", ".txt", ".js", ".ts"}:
+            try:
+                text_files.append((item, item.read_text(encoding="utf-8")))
+            except (UnicodeDecodeError, OSError):
+                pass
+    results = []
+    for candidate in files:
+        name = candidate.name
+        references = []
+        for other, content in text_files:
+            if other == candidate:
+                continue
+            if name in content:
+                references.append(str(other.relative_to(safe_path(root, "."))))
+        if not references:
+            results.append({
+                "path": str(candidate.relative_to(safe_path(root, "."))),
+                "status": "possibly_unreferenced",
+                "warning": "Heuristic only; dynamic references may be missed",
+            })
+    return results
+
+
+def project_tree(path=".", max_entries=500, root="."):
+    if max_entries < 1:
+        raise ValueError("max_entries must be positive")
+    base = safe_path(path, root)
+    excluded = {".git", ".venv", "__pycache__", "node_modules"}
+    entries = []
+    for item in sorted(base.rglob("*")):
+        if any(part in excluded for part in item.relative_to(base).parts):
+            continue
+        entries.append({
+            "path": str(item.relative_to(base)),
+            "type": "directory" if item.is_dir() else "file",
+        })
+        if len(entries) >= max_entries:
+            break
+    return {"root": str(base), "entries": entries, "truncated": len(entries) >= max_entries}
+
+
+def file_diff_engine(path_a, path_b, root="."):
+    left = safe_path(path_a, root).read_text(encoding="utf-8", errors="replace").splitlines()
+    right = safe_path(path_b, root).read_text(encoding="utf-8", errors="replace").splitlines()
+    return list(difflib.unified_diff(
+        left, right, fromfile=str(path_a), tofile=str(path_b), lineterm=""
+    ))
+
+
+def file_snapshot(path, root="."):
+    target = safe_path(path, root)
+    info = target.stat()
+    digest = hashlib.sha256()
+    with target.open("rb") as stream:
+        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return {
+        "path": str(target.relative_to(Path(root).resolve())),
+        "size_bytes": info.st_size,
+        "modified_time": info.st_mtime,
+        "mode": stat.filemode(info.st_mode),
+        "sha256": digest.hexdigest(),
+    }
+
+
 IMPLEMENTATIONS = {
     "file_walker": file_walker,
     "file_hasher": file_hasher,
@@ -277,6 +634,28 @@ IMPLEMENTATIONS = {
     "secret_pattern_scanner": secret_pattern_scanner,
     "sqlite_reader": sqlite_reader,
     "build_report": build_report,
+
+    "directory_size": directory_size,
+    "duplicate_finder": duplicate_finder,
+    "large_file_finder": large_file_finder,
+    "empty_file_finder": empty_file_finder,
+    "file_age_analyzer": file_age_analyzer,
+    "permission_auditor": permission_auditor,
+    "symlink_inspector": symlink_inspector,
+    "archive_inspector": archive_inspector,
+    "encoding_detector": encoding_detector,
+    "line_counter": line_counter,
+    "extension_report": extension_report,
+    "git_change_analyzer": git_change_analyzer,
+    "git_blame_reader": git_blame_reader,
+    "source_file_classifier": source_file_classifier,
+    "code_symbol_extractor": code_symbol_extractor,
+    "import_graph": import_graph,
+    "dead_file_detector": dead_file_detector,
+    "project_tree": project_tree,
+    "file_diff_engine": file_diff_engine,
+    "file_snapshot": file_snapshot,
+
 }
 
 
