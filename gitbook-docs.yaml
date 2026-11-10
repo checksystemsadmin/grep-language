@@ -1,0 +1,12 @@
+$schema: https://api.gitbook.com/gitbook-docs.yaml
+version: 1
+site:
+  title: GREP Language
+  structure:
+    - type: space
+      key: grep-documentation
+      title: GREP Documentation
+      path: documentation
+      default: true
+      content:
+        directory: ./docs/guide
