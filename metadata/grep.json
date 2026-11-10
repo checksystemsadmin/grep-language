@@ -1,0 +1,37 @@
+{
+  "schemaVersion": "1.0",
+  "project": {
+    "name": "GREP",
+    "fullName": "Global Retrieval, Execution & Processing",
+    "version": "0.1.0",
+    "status": "experimental",
+    "description": "An experimental search-native programming language.",
+    "creator": "Nolan G. Sands",
+    "license": "MIT"
+  },
+  "repository": {
+    "provider": "github",
+    "owner": "checksystemsadmin",
+    "name": "grep-language",
+    "url": "https://github.com/checksystemsadmin/grep-language",
+    "branch": "main"
+  },
+  "website": {
+    "url": "https://checksystemsadmin.github.io/grep-language/"
+  },
+  "runtime": {
+    "implementation": "Python",
+    "cli": "greplang"
+  },
+  "capabilities": [
+    "print",
+    "let",
+    "find",
+    "comments"
+  ],
+  "metadata": {
+    "sourceOfTruth": true,
+    "generated": false,
+    "schemaVersion": "1.0"
+  }
+}
