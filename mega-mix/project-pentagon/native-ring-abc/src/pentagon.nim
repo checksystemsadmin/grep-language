@@ -1,4 +1,4 @@
-import std/[json, strutils, deques, locks, os, times, math]
+import std/[json, strutils, deques, locks, math]
 
 const
   MaxLineBytes* = 4096
@@ -57,7 +57,7 @@ proc allocateTestBuffer(r: var MreReserve, bytes: int): bool =
 proc isAllowedKey(key: string): bool =
   key in ["type", "battery_percent", "battery_temp_c", "charging", "battery_health", "timestamp_ms", "payload"]
 
-proc validateTelemetry(node: JsonNode): tuple[ok: bool, reason: string] =
+proc validateTelemetry*(node: JsonNode): tuple[ok: bool, reason: string] =
   if node.kind != JObject: return (false, "object_required")
   for key, value in node:
     if not isAllowedKey(key): return (false, "unknown_key:" & key)
@@ -69,7 +69,7 @@ proc validateTelemetry(node: JsonNode): tuple[ok: bool, reason: string] =
   let pct = node["battery_percent"].getInt()
   if pct < 0 or pct > 100: return (false, "battery_percent_range")
   if node["battery_temp_c"].kind notin {JInt, JFloat}: return (false, "battery_temp_type")
-  let temp = node["battery_temp_c"].getFloat()
+  let temp = if node["battery_temp_c"].kind == JInt: node["battery_temp_c"].getInt().float else: node["battery_temp_c"].getFloat()
   if classify(temp) in {fcNan, fcInf, fcNegInf} or temp < -30.0 or temp > 100.0:
     return (false, "battery_temp_range")
   if node["charging"].kind != JBool: return (false, "charging_type")
@@ -89,8 +89,10 @@ proc safeResponse(kind: string, detail = ""): string =
   var node = newJObject()
   node["type"] = %kind
   if detail.len > 0:
-    let clean = detail.filterIt(it >= ' ' and it != '\\' and it != '"')
-    node["detail"] = %clean[0 ..< min(clean.len, 120)]
+    var clean = ""
+    for ch in detail:
+      if ch >= ' ' and ch != '\\' and ch != '"' and clean.len < 120: clean.add(ch)
+    node["detail"] = %clean
   $node
 
 proc readBoundedLine(input: File, limit: int): tuple[ok: bool, line: string, tooLong: bool] =
