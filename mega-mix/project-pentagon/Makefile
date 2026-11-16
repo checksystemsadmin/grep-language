@@ -7,6 +7,7 @@ BUILD := build
 NATIVE_SRC := native-ring-abc/src/pentagon.nim
 NATIVE_BIN := $(BUILD)/pentagon-native
 KOTLIN_SRC := $(wildcard android-ring-ed/src/main/kotlin/*.kt)
+KOTLIN_TEST_SRC := $(wildcard tests/kotlin/*.kt)
 
 .PHONY: build-native build-arm64 test test-native test-kotlin package clean verify-tools
 
@@ -40,10 +41,11 @@ test-kotlin:
 
 test: test-native test-kotlin
 
-package: build-native
+package: build-native build-kotlin
 	@mkdir -p dist/project-pentagon
 	@for d in native-ring-abc android-ring-ed termux-boot tests scripts docs config; do if [ -d "$d" ]; then cp -R "$d" dist/project-pentagon/; fi; done
 	@cp $(NATIVE_BIN) dist/project-pentagon/pentagon-native
+	@cp $(BUILD)/kotlin/pentagon.jar dist/project-pentagon/pentagon.jar
 	@cp Makefile pentagon.nimble dist/project-pentagon/
 	@tar -C dist -czf dist/project-pentagon-0.1.0.tar.gz project-pentagon
 
