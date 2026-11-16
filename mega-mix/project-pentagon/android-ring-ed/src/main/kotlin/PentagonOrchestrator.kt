@@ -35,7 +35,14 @@ class PentagonOrchestrator(
     }
 
     fun sampleBattery(): WatchdogResult {
-        val snapshot = api.readBattery().getOrElse { return watchdog.sensorFailure(it.message ?: "termux_api_failure") }
+        val snapshotResult = api.readBattery()
+        if (snapshotResult.isFailure) {
+            val fault = watchdog.sensorFailure(snapshotResult.exceptionOrNull()?.message ?: "termux_api_failure")
+            notifier.notify("Project Pentagon: ${fault.state}", fault.message)
+            if (fault.requestShutdown) shutdownNative()
+            return fault
+        }
+        val snapshot = snapshotResult.getOrThrow()
         val result = watchdog.evaluate(snapshot)
         if (result.state != "HEALTHY") notifier.notify("Project Pentagon: ${result.state}", result.message)
         if (!result.requestShutdown) {
