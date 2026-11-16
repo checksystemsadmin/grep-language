@@ -19,7 +19,7 @@ const commands: Record<ModuleId, string[]> = {
   overview: ['npm run dev', 'npm run build', 'npm run typecheck'],
   gnu: ['grep -Rni --exclude-dir=node_modules "pattern" .', 'git diff --check', 'python -m unittest discover -s tests -v'],
   pico: ['cmake -S pico -B build/pico -DPICO_BOARD=pico', 'cmake --build build/pico', 'picotool info build/pico/firmware.uf2'],
-  qemu: ['qemu-system-x86_64 --version', 'qemu-img create -f qcow2 disk.qcow2 16G', './scripts/qemu-launch.sh disk.qcow2'],
+  qemu: ['qemu-system-x86_64 --version', 'qemu-img create -f qcow2 disk.qcow2 16G', 'bash scripts/qemu-launch.sh disk.qcow2'],
   studio: ['npm install', 'npm run dev', 'npm run build'],
 }
 function App() {
