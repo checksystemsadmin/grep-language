@@ -99,13 +99,13 @@ proc readBoundedLine(input: File, limit: int): tuple[ok: bool, line: string, too
   var value = newStringOfCap(limit)
   while not input.endOfFile:
     let ch = input.readChar()
-    if ch == '\\n': return (true, value, false)
-    if ch == '\\r': continue
+    if ch == '\n': return (true, value, false)
+    if ch == '\r': continue
     if value.len >= limit:
       while not input.endOfFile:
-        if input.readChar() == '\\n': break
+        if input.readChar() == '\n': break
       return (false, "", true)
-    if ord(ch) < 32 and ch != '\\t': return (false, "", false)
+    if ord(ch) < 32 and ch != '\t': return (false, "", false)
     value.add(ch)
   if value.len > 0: return (true, value, false)
   return (false, "", false)
