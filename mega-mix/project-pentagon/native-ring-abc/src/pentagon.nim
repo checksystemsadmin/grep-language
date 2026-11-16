@@ -7,11 +7,11 @@ const
   DefaultMreBytes* = 64 * 1024
 
 type
-  BoundedQueue = object
+  BoundedQueue* = object
     guard: Lock
     items: Deque[string]
     capacity: int
-  MreReserve = object
+  MreReserve* = object
     guard: Lock
     buffers: seq[seq[byte]]
     allocatedBytes: int
@@ -20,31 +20,34 @@ type
 var workQueue: BoundedQueue
 var mre: MreReserve
 
-proc initQueue(q: var BoundedQueue, capacity: int) =
+proc initQueue*(q: var BoundedQueue, capacity: int) =
   initLock(q.guard)
   q.items = initDeque[string]()
   q.capacity = max(1, min(capacity, MaxQueueItems))
 
-proc enqueue(q: var BoundedQueue, value: string): bool =
+proc enqueue*(q: var BoundedQueue, value: string): bool =
   acquire(q.guard)
   result = q.items.len < q.capacity
   if result: q.items.addLast(value)
   release(q.guard)
 
-proc dequeue(q: var BoundedQueue): tuple[ok: bool, value: string] =
+proc dequeue*(q: var BoundedQueue): tuple[ok: bool, value: string] =
   acquire(q.guard)
   if q.items.len > 0:
     result.ok = true
     result.value = q.items.popFirst()
   release(q.guard)
 
-proc initMre(r: var MreReserve, bytes: int) =
+proc initMre*(r: var MreReserve, bytes: int) =
   initLock(r.guard)
   r.limitBytes = max(0, min(bytes, MaxPayloadBytes))
   r.allocatedBytes = 0
   r.buffers = @[]
+  if r.limitBytes > 0:
+    r.buffers.add(newSeq[byte](r.limitBytes))
+    r.allocatedBytes = r.limitBytes
 
-proc allocateTestBuffer(r: var MreReserve, bytes: int): bool =
+proc allocateTestBuffer*(r: var MreReserve, bytes: int): bool =
   if bytes <= 0 or bytes > MaxPayloadBytes: return false
   acquire(r.guard)
   result = bytes <= r.limitBytes - r.allocatedBytes
