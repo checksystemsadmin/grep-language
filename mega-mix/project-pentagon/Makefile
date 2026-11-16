@@ -33,7 +33,10 @@ test-native: verify-tools
 	$(NIM) c -r --path:native-ring-abc/src native-ring-abc/tests/test_core.nim
 
 test-kotlin:
-	@echo "Kotlin tests are added in Phase 3/4."
+	@command -v $(KOTLINC) >/dev/null 2>&1 || { echo "kotlinc is required" >&2; exit 127; }
+	@mkdir -p $(BUILD)/kotlin
+	$(KOTLINC) $(KOTLIN_SRC) $(KOTLIN_TEST_SRC) -jvm-target 17 -include-runtime -d $(BUILD)/kotlin/pentagon-tests.jar
+	$(JAVA) -cp $(BUILD)/kotlin/pentagon-tests.jar pentagon.PentagonUnitTestsKt
 
 test: test-native test-kotlin
 
