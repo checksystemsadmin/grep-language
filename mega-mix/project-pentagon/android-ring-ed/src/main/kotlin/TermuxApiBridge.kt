@@ -44,7 +44,7 @@ class TermuxApiBridge(
             require(key !in fields) { "battery_json_duplicate_key" }
             fields[key] = match.groupValues[2].trim('"')
         }
-        val residue = pattern.replace(trimmed, "").replace(Regex("[{},\\s:]"), "")
+        val residue = pattern.replace(trimmed, "").replace(Regex("[{},\\s:,]"), "")
         require(residue.isEmpty()) { "battery_json_malformed" }
         val allowed = setOf("health", "percentage", "plugged", "status", "temperature", "current", "voltage", "technology")
         require(fields.keys.all { it in allowed }) { "battery_json_unknown_key" }
