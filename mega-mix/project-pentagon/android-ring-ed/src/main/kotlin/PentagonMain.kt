@@ -16,9 +16,13 @@ object PentagonMain {
                 System.err.println("Project Pentagon startup failed: ${it.message}")
                 kotlin.system.exitProcess(1)
             }
-            val result = supervisor.sampleBattery()
-            println("PENTAGON_STATUS=${result.state}")
-            if (result.requestShutdown) kotlin.system.exitProcess(3)
+            Runtime.getRuntime().addShutdownHook(Thread { supervisor.close() })
+            while (true) {
+                val result = supervisor.sampleBattery()
+                println("PENTAGON_STATUS=${result.state}")
+                if (result.requestShutdown) break
+                Thread.sleep(15_000)
+            }
         }
     }
 }
