@@ -15,7 +15,7 @@ qemu-img create -f qcow2 build/guest.qcow2 16G
 ## Launch
 
 ```sh
-./scripts/qemu-launch.sh build/guest.qcow2
+bash scripts/qemu-launch.sh build/guest.qcow2
 ```
 
 The launcher uses a user-mode NAT network and does not expose host directories or devices. Supply your own legally obtained guest installation media and install it into the disk image. VM execution is host-dependent and may be unavailable in browser-only development containers.
