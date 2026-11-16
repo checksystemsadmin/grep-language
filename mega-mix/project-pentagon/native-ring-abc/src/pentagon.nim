@@ -16,6 +16,7 @@ type
     buffers: seq[seq[byte]]
     allocatedBytes: int
     limitBytes: int
+    fallbackAvailable: bool
 
 var workQueue: BoundedQueue
 var mre: MreReserve
@@ -42,10 +43,17 @@ proc initMre*(r: var MreReserve, bytes: int) =
   initLock(r.guard)
   r.limitBytes = max(0, min(bytes, MaxPayloadBytes))
   r.allocatedBytes = 0
+  r.fallbackAvailable = r.limitBytes > 0
   r.buffers = @[]
   if r.limitBytes > 0:
     r.buffers.add(newSeq[byte](r.limitBytes))
     r.allocatedBytes = r.limitBytes
+
+proc useMreFallback*(r: var MreReserve): bool =
+  acquire(r.guard)
+  result = r.fallbackAvailable and r.buffers.len > 0
+  if result: r.fallbackAvailable = false
+  release(r.guard)
 
 proc allocateTestBuffer*(r: var MreReserve, bytes: int): bool =
   if bytes <= 0 or bytes > MaxPayloadBytes: return false
@@ -127,8 +135,8 @@ proc handleLine(line: string): string =
     let checked = validateTelemetry(request)
     if not checked.ok: return safeResponse("DIODE_BREACH", checked.reason)
     if not enqueue(workQueue, line):
-      discard allocateTestBuffer(mre, DefaultMreBytes)
-      return safeResponse("ERROR", "queue_full_mre_fallback")
+      if useMreFallback(mre): return safeResponse("ERROR", "queue_full_mre_fallback_available")
+      return safeResponse("ERROR", "queue_full_mre_exhausted")
     let item = dequeue(workQueue)
     if item.ok: return safeResponse("OK", "telemetry_accepted")
     return safeResponse("ERROR", "queue_state_error")
