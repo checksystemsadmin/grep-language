@@ -39,7 +39,7 @@ test: test-native test-kotlin
 
 package: build-native
 	@mkdir -p dist/project-pentagon
-	@cp -R native-ring-abc android-ring-ed termux-boot tests scripts docs config dist/project-pentagon/
+	@for d in native-ring-abc android-ring-ed termux-boot tests scripts docs config; do if [ -d "$d" ]; then cp -R "$d" dist/project-pentagon/; fi; done
 	@cp $(NATIVE_BIN) dist/project-pentagon/pentagon-native
 	@cp Makefile pentagon.nimble dist/project-pentagon/
 	@tar -C dist -czf dist/project-pentagon-0.1.0.tar.gz project-pentagon
